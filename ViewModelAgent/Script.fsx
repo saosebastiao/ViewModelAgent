@@ -1,4 +1,5 @@
-﻿#load "ViewModelAgent.fs"
+﻿#load "AutoCancelAgent.fs"
+#load "ViewModelAgent.fs"
 open ViewModelAgent
 
 
@@ -24,12 +25,11 @@ type VMCache<'S>() =
             return ()}
 
 type VMLogger<'S,'A>() =
-    inherit IViewModelLogger<'S,'A>() with 
+    interface IViewModelLogger<'S,'A> with 
         member this.LogTransition(state,newState) = printfn "Transitioned from %A to %A" state newState
         member this.LogAction(action) = printfn "Performed %A" action
         member this.LogState(state) = printfn "Currently in %A" state
-        member this.LogLifecycleTransition(state,newState) = 
-            printfn "Lifecycle change from %A to %A" state newState
+        member this.LogLifecycleTransition(state,newState) = printfn "Lifecycle change from %A to %A" state newState
         member this.LogObserverSubscription(obs) = printfn "New Observer: %A" obs
         member this.LogObserverCompletion(obs) = printfn "Observer %A has completed" obs
         member this.LogSupervisorAction(ex) = printfn "Supervisor handling: %A" ex

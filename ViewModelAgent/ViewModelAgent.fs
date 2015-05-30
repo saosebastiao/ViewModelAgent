@@ -1,7 +1,7 @@
 ﻿namespace ViewModelAgent
 open System
+open FSharp.Control
 
-type Agent<'T> = MailboxProcessor<'T>
 type VMState<'S> = 
     | Active of 'S
     | Inactive of 'S
@@ -21,7 +21,7 @@ type IViewModelCache<'S> =
     abstract member SetState : string * 'S -> Async<unit>
     abstract member FlushState: string -> Async<unit>
 
-type IViewModelLogger<'S,'A>() =
+type IViewModelLogger<'S,'A> =
     abstract member LogTransition: 'S * 'S -> unit
     abstract member LogAction: 'A -> unit
     abstract member LogState: 'S -> unit
@@ -30,14 +30,6 @@ type IViewModelLogger<'S,'A>() =
     abstract member LogObserverCompletion: IObserver<'S> -> unit
     abstract member LogSupervisorAction: exn -> unit
     abstract member LogPublishAction: exn -> unit
-    default this.LogTransition(_,_) = ()
-    default this.LogAction(_) = ()
-    default this.LogState(_) = ()
-    default this.LogLifecycleTransition(_,_) = ()
-    default this.LogObserverSubscription(_) = ()
-    default this.LogObserverCompletion(_) = ()
-    default this.LogSupervisorAction(_) = ()
-    default this.LogPublishAction(_) = ()
 
 type ViewModelAgent<'S,'A when 'S: equality>(vmName:string, 
                                              initState: 'S, 
