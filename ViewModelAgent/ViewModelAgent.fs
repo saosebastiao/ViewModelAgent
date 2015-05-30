@@ -1,8 +1,8 @@
 ﻿namespace ViewModelAgent
 open System
 open System.Threading
-open FSharp.Control
 
+type Agent<'T> = MailboxProcessor<'T>
 type VMState<'S> = 
     | Active of 'S
     | Inactive of 'S
@@ -38,6 +38,7 @@ type ViewModelAgent<'S,'A when 'S: equality>(vmName:string,
                                              vmCache: IViewModelCache<'S>,
                                              logger: IViewModelLogger<'S,'A>,
                                              ?exnHandler: exn -> unit) =
+    let cts = new CancellationTokenSource()
     let exnHandlerFn = defaultArg exnHandler (fun _ -> ())  
     let finished = ref false
     let subscribers = ref (Map.empty : Map<int, IObserver<'S>>)
@@ -122,8 +123,8 @@ type ViewModelAgent<'S,'A when 'S: equality>(vmName:string,
                 return! controller(Dropped)
             | _ -> return! controller(Dropped)
         }
-        controller(Dropped)
-    let vm = AutoCancelAgent<VMAction<_>>.Start(fun inbox -> supervisor (processor inbox) initState)
+        controller(Suspended(vmName))
+    let vm = Agent<VMAction<_>>.Start((fun inbox -> supervisor (processor inbox) initState),cts.Token)
     let obs = 
         { new IObservable<'S> with 
             member this.Subscribe(obs) =
@@ -140,10 +141,10 @@ type ViewModelAgent<'S,'A when 'S: equality>(vmName:string,
                         lock subscribers (fun () -> 
                             subscribers := subscribers.Value.Remove(subscriberKey)) 
                         do logger.LogObserverCompletion(obs) } }
+    do vm.Post(Resume)
     member this.Restart() = 
         vm.Post(Drop)
         vm.Post(Resume)
-    member this.Start() = this.Restart()
     member this.Resume() = vm.Post(Resume)
     member this.Deactivate() = vm.Post(Deactivate)
     member this.Suspend() = vm.Post(Suspend)
@@ -152,4 +153,4 @@ type ViewModelAgent<'S,'A when 'S: equality>(vmName:string,
     member this.AsObservable = obs
     interface IDisposable with
         member this.Dispose() = 
-            (vm :> IDisposable).Dispose()
+            cts.Cancel()

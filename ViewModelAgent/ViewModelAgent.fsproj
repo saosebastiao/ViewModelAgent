@@ -42,7 +42,6 @@
     </Reference>
   </ItemGroup>
   <ItemGroup>
-    <Compile Include="AutoCancelAgent.fs" />
     <Compile Include="ViewModelAgent.fs" />
     <None Include="Script.fsx" />
   </ItemGroup>

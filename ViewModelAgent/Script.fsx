@@ -1,5 +1,4 @@
-﻿#load "AutoCancelAgent.fs"
-#load "ViewModelAgent.fs"
+﻿#load "ViewModelAgent.fs"
 open ViewModelAgent
 
 
@@ -46,7 +45,7 @@ let exnHandler = function
     | UnhandledViewModelEvent(s,e) -> ()
     | _ -> ()
 
-let login = ViewModelAgent(vmName,initState,actionHandler,vmCache,vmLogger,exnHandler)
+let login = new ViewModelAgent<ViewPage,PrintThis>(vmName,initState,actionHandler,vmCache,vmLogger,exnHandler)
 
 let o1 = login.AsObservable
 let o2 = login.AsObservable
@@ -55,6 +54,5 @@ let renderer1 s = printfn "RENDERING %A in format1" s
 let renderer2 s = printfn "RENDERING %A in format2" s
 o1.Add(renderer1)
 o1.Add(renderer2)
-login.Start()
+
 login.Post(Print)
-login.Kill()
