@@ -1,5 +1,6 @@
 ﻿namespace ViewModelAgent
 open System
+open System.Threading
 open FSharp.Control
 
 type VMState<'S> = 
