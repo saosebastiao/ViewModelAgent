@@ -7,12 +7,12 @@ type VMState<'S> =
     | Active of 'S
     | Inactive of 'S
     | Suspended of cacheKey: string 
-    | Dead
+    | Dropped
 type VMAction<'A> =
     | Resume //from Suspended or Inactive
-    | Suspend // persist VMState in cache 
     | Deactivate // persist VMState in memory
-    | Kill // discard all state
+    | Suspend // persist VMState in cache 
+    | Drop // discard all state
     | Action of 'A //normal action
 
 exception UnhandledViewModelEvent of curState:string * event:string
@@ -37,7 +37,8 @@ type ViewModelAgent<'S,'A when 'S: equality>(vmName:string,
                                              actionHandler: 'S * 'A -> 'S, 
                                              vmCache: IViewModelCache<'S>,
                                              logger: IViewModelLogger<'S,'A>,
-                                             exnHandler: exn -> unit) =
+                                             ?exnHandler: exn -> unit) =
+    let exnHandlerFn = defaultArg exnHandler (fun _ -> ())  
     let finished = ref false
     let subscribers = ref (Map.empty : Map<int, IObserver<'S>>)
     let subscriberIDsequence = ref 0
@@ -56,7 +57,7 @@ type ViewModelAgent<'S,'A when 'S: equality>(vmName:string,
                 do! f x
             with ex -> 
                 logger.LogSupervisorAction(ex) 
-                exnHandler(ex) }
+                exnHandlerFn(ex) }
     let processor (inbox: MailboxProcessor<VMAction<_>>) init =
         let rec controller = function
         | Active(state) -> async {
@@ -70,10 +71,10 @@ type ViewModelAgent<'S,'A when 'S: equality>(vmName:string,
                 do! vmCache.SetState(vmName,state) //save to cache!!
                 do logger.LogLifecycleTransition(Active(state),Suspended(vmName))
                 return! controller(Suspended(vmName))
-            | Kill ->
+            | Drop ->
                 do! vmCache.FlushState(vmName) //flush cache
-                do logger.LogLifecycleTransition(Active(state),Dead)
-                return! controller(Dead)
+                do logger.LogLifecycleTransition(Active(state),Dropped)
+                return! controller(Dropped)
             | Action(action) ->
                 do logger.LogAction(action)
                 let newState = actionHandler(state,action)
@@ -89,10 +90,10 @@ type ViewModelAgent<'S,'A when 'S: equality>(vmName:string,
                 do! vmCache.SetState(vmName,state) //save to cache!!
                 do logger.LogLifecycleTransition(Inactive(state),Suspended(vmName))
                 return! controller(Suspended(vmName))
-            | Kill ->
+            | Drop ->
                 do! vmCache.FlushState(vmName) //flush cache
-                do logger.LogLifecycleTransition(Inactive(state),Dead)
-                return! controller(Dead)
+                do logger.LogLifecycleTransition(Inactive(state),Dropped)
+                return! controller(Dropped)
             | Resume ->
                 do logger.LogLifecycleTransition(Inactive(state),Active(state))
                 return! controller(Active(state))
@@ -105,24 +106,24 @@ type ViewModelAgent<'S,'A when 'S: equality>(vmName:string,
                 let! resumeState = vmCache.GetState(key,initState)
                 do logger.LogLifecycleTransition(Suspended(key),Active(resumeState))
                 return! controller(Active(resumeState))
-            | Kill ->
+            | Drop ->
                 do! vmCache.FlushState(vmName) //flush cache
-                do logger.LogLifecycleTransition(Suspended(key),Dead)
-                return! controller(Dead)
+                do logger.LogLifecycleTransition(Suspended(key),Dropped)
+                return! controller(Dropped)
             | _ -> return! controller(Suspended(key))
             }
-        | Dead -> async {
+        | Dropped -> async {
             let! msg = inbox.Receive()
             match msg with 
             | Resume -> 
-                do logger.LogLifecycleTransition(Dead,Active(initState))
+                do logger.LogLifecycleTransition(Dropped,Active(initState))
                 return! controller(Active(initState))
-            | Kill -> 
-                return! controller(Dead)
-            | _ -> return! controller(Dead)
+            | Drop -> 
+                return! controller(Dropped)
+            | _ -> return! controller(Dropped)
         }
-        controller(Dead)
-    let vm = Agent<VMAction<_>>.Start(fun inbox -> supervisor (processor inbox) initState)
+        controller(Dropped)
+    let vm = AutoCancelAgent<VMAction<_>>.Start(fun inbox -> supervisor (processor inbox) initState)
     let obs = 
         { new IObservable<'S> with 
             member this.Subscribe(obs) =
@@ -140,12 +141,15 @@ type ViewModelAgent<'S,'A when 'S: equality>(vmName:string,
                             subscribers := subscribers.Value.Remove(subscriberKey)) 
                         do logger.LogObserverCompletion(obs) } }
     member this.Restart() = 
-        vm.Post(Kill)
+        vm.Post(Drop)
         vm.Post(Resume)
     member this.Start() = this.Restart()
     member this.Resume() = vm.Post(Resume)
     member this.Deactivate() = vm.Post(Deactivate)
     member this.Suspend() = vm.Post(Suspend)
-    member this.Kill() = vm.Post(Kill)
+    member this.Drop() = vm.Post(Drop)
     member this.Post(m) = vm.Post(Action(m))
     member this.AsObservable = obs
+    interface IDisposable with
+        member this.Dispose() = 
+            (vm :> IDisposable).Dispose()
