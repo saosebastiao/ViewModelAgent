@@ -30,7 +30,7 @@ type IViewModelLogger<'S,'A> =
     abstract member LogObserverSubscription: IObserver<'S> -> unit
     abstract member LogObserverCompletion: IObserver<'S> -> unit
     abstract member LogSupervisorAction: exn -> unit
-    abstract member LogPublishAction: exn -> unit
+    abstract member LogPublishException: exn -> unit
 
 type ViewModelAgent<'S,'A when 'S: equality>(vmName:string, 
                                              initState: 'S, 
@@ -46,7 +46,7 @@ type ViewModelAgent<'S,'A when 'S: equality>(vmName:string,
     let publish msg = 
         !subscribers 
         |> Seq.iter (fun (KeyValue(_, sub)) ->
-            try sub.OnNext(msg) with ex -> logger.LogPublishAction(ex))
+            try sub.OnNext(msg) with ex -> logger.LogPublishException(ex))
     let completed() = 
         lock subscribers (fun () ->
             finished := true
